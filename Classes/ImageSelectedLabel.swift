@@ -31,7 +31,7 @@ class ImageSelectedLabel: UILabel {
         self.textAlignment = .center
         self.font = UIFont.systemFont(ofSize: 15)
         self.textColor = UIColor.white
-        toolBar .addSubview(self)
+        toolBar.addSubview(self)
     }
     
     /**

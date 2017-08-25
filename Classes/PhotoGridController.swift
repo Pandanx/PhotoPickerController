@@ -14,11 +14,7 @@ let screenHeigth:CGFloat = UIScreen.main.bounds.height
 
 class PhotoGridController: UIViewController {
 
-//    @IBOutlet weak var completeItem: UIBarButtonItem!
-//    @IBOutlet weak var toolBar: UIToolbar!
-//    @IBOutlet weak var collectionView: UICollectionView!
     var completeItem: UIBarButtonItem! = UIBarButtonItem()
-    var toolBar: UIToolbar! = UIToolbar()
     var collectionView: UICollectionView!
     
     ///后去到的结果 存放PHAsset
@@ -35,36 +31,24 @@ class PhotoGridController: UIViewController {
     var maxSelected = 9
     ///点击完成时的回调
     var completeHandler:((_ assets:[PHAsset]) ->())?
+    var shouldDeleteAfterExport: Bool = false
     
     lazy var selectedLabel: ImageSelectedLabel = {
-        let tempLabel = ImageSelectedLabel(toolBar:self.toolBar)
+        let tempLabel = ImageSelectedLabel(toolBar:self.navigationController!.toolbar)
         return tempLabel
     }()
     
-    override func awakeFromNib() {
-        super.awakeFromNib()
-        if assetsFetchResults == nil {
-            //如果没有传入值 则获取所有资源
-            let allPhotoOption = PHFetchOptions()
-            allPhotoOption.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-            allPhotoOption.predicate = NSPredicate(format: "mediaType = %d", PHAssetMediaType.image.rawValue)
-            assetsFetchResults = PHAsset.fetchAssets(with: PHAssetMediaType.image, options: allPhotoOption)
-        }
+    override func viewDidLoad() {
+        super.viewDidLoad()
         
-        //初始化和重置缓存
-        imageMannger = PHCachingImageManager()
-        self.resetCachedAssets()
-    }
-    init() {
-        super.init(nibName: nil, bundle: nil)
         //设置流对象layout
         let collectionLayout: UICollectionViewFlowLayout = UICollectionViewFlowLayout()
         collectionLayout.minimumLineSpacing = 1
         collectionLayout.minimumInteritemSpacing = 1
-        collectionLayout.sectionInset = UIEdgeInsetsMake(0, 0, 0, 0)
+        collectionLayout.sectionInset = UIEdgeInsets.zero
         collectionLayout.itemSize = CGSize(width:screenWidth/4.0-1, height:screenWidth/4.0-1)
-        collectionView = UICollectionView(frame:CGRect(x: 0, y: 0, width: self.view.bounds.width, height: self.view.bounds.height - 44 ), collectionViewLayout: collectionLayout)
-        collectionView.register(PhotoGridCell.classForCoder(), forCellWithReuseIdentifier: "PhotoGridCollectionCell")
+        collectionView = UICollectionView(frame:view.bounds, collectionViewLayout: collectionLayout)
+        collectionView.register(PhotoGridCell.self, forCellWithReuseIdentifier: "PhotoGridCollectionCell")
         collectionView.backgroundColor = UIColor.white
         //并设置允许多选
         collectionView.allowsMultipleSelection = true
@@ -72,38 +56,24 @@ class PhotoGridController: UIViewController {
         collectionView.dataSource = self
         
         self.view.addSubview(collectionView)
-        toolBar.frame = CGRect(x: 0, y: collectionView.bounds.maxY, width: self.view.bounds.width, height: 44)
-        self.view.addSubview(toolBar)
-        completeItem = UIBarButtonItem.init(title: "完成", style: UIBarButtonItemStyle.plain, target: self, action: #selector(finishSelected))
-        let flexibleItem = UIBarButtonItem.init(barButtonSystemItem: UIBarButtonSystemItem.flexibleSpace, target: nil, action: nil)
-        toolBar.items = [flexibleItem, completeItem]
+        completeItem = UIBarButtonItem(title: "完成", style: UIBarButtonItemStyle.plain, target: self, action: #selector(finishSelected))
+        let flexibleItem = UIBarButtonItem(barButtonSystemItem: UIBarButtonSystemItem.flexibleSpace, target: nil, action: nil)
+        self.toolbarItems = [flexibleItem, completeItem]
         
         if assetsFetchResults == nil {
             //如果没有传入值 则获取所有资源
             let allPhotoOption = PHFetchOptions()
             allPhotoOption.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-            allPhotoOption.predicate = NSPredicate(format: "mediaType = %d", PHAssetMediaType.image.rawValue)
-            assetsFetchResults = PHAsset.fetchAssets(with: PHAssetMediaType.image, options: allPhotoOption)
+            assetsFetchResults = PHAsset.fetchAssets(with: allPhotoOption)
         }
         
         //初始化和重置缓存
         imageMannger = PHCachingImageManager()
         self.resetCachedAssets()
-    }
-    
-    required init?(coder aDecoder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-    
-    
-    override func viewDidLoad() {
-        super.viewDidLoad()
         
         let rightBarItem = UIBarButtonItem(title: "取消", style: UIBarButtonItemStyle.plain, target: self, action: #selector(cancel))
         navigationItem.rightBarButtonItem = rightBarItem
-        
         completeItem.action = #selector(finishSelected)
-        
         disableItems()
     }
     
@@ -115,6 +85,13 @@ class PhotoGridController: UIViewController {
         let cellSize = (self.collectionView.collectionViewLayout as! UICollectionViewFlowLayout).itemSize
         assetGridThumbnailSize = CGSize(width: cellSize.width * scale, height: cellSize.height * scale)
         realImageSize = CGSize(width: screenWidth * scale, height: screenHeigth * scale)
+        self.navigationController!.isToolbarHidden = false
+    }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        self.navigationController!.isToolbarHidden = true
+        selectedLabel.selectedNumber = 0
     }
     
     // 是否页面加载完毕 ， 加载完毕后再做缓存 否则数值可能有误
@@ -122,6 +99,7 @@ class PhotoGridController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         didLoad = true
+        
     }
     
     override func didReceiveMemoryWarning() {
@@ -183,7 +161,6 @@ extension PhotoGridController {
         option.resizeMode = .fast
         
         if let indexPaths = collectionView.indexPathsForSelectedItems {
-    
             indexPaths.forEach({ (indexPath) in
                 assets.append(assetsFetchResults[indexPath.row])
             })
@@ -233,9 +210,15 @@ extension PhotoGridController:UICollectionViewDelegate, UICollectionViewDataSour
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "PhotoGridCollectionCell", for: indexPath) as! PhotoGridCell
         let asset = self.assetsFetchResults[indexPath.row]
-        imageMannger.requestImage(for: asset, targetSize: assetGridThumbnailSize, contentMode: PHImageContentMode.aspectFit, options: nil) { (image, info) in
-
+        imageMannger.requestImage(for: asset, targetSize: assetGridThumbnailSize, contentMode: PHImageContentMode.aspectFill, options: nil) { (image, info) in
             cell.imageView.image = image
+            switch asset.mediaType {
+            case .video:
+                cell.duration = asset.duration
+            default:
+                break
+            }
+            
         }
         return cell
     }
@@ -278,15 +261,12 @@ extension PhotoGridController:UICollectionViewDelegate, UICollectionViewDataSour
     
     func updateChachedAssets() {
         let isViewVisible = self.isViewLoaded && didLoad
-        
         if !isViewVisible {
             return
         }
         var preheatRect = self.collectionView.bounds
         preheatRect = preheatRect.insetBy(dx: 0, dy: -0.5*preheatRect.height)
-        
         let delta = abs(preheatRect.midY - self.previousPreheatRect.midY)
-        
         if delta > collectionView.bounds.size.height / 3.0 {
             var addIndexPaths = [IndexPath]()
             var removedIndexPaths = [IndexPath]()
@@ -309,12 +289,11 @@ extension PhotoGridController:UICollectionViewDelegate, UICollectionViewDataSour
             self.previousPreheatRect = preheatRect
         }
         
-        
     }
     
     func computeDifferenceBetweenRect(_ oldRect:CGRect, andRect newRect:CGRect, removedHandler:((_ removedRect:CGRect)->())?, addedHandler:((_ addedRect:CGRect)->())?) {
         //判断两个矩形是否相交
-        if newRect .intersects(oldRect) {
+        if newRect.intersects(oldRect) {
             let oldMaxY = oldRect.maxY
             let newMaxY = newRect.maxY
             let oldMinY = oldRect.minY

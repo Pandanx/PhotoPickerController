@@ -13,7 +13,7 @@ import Photos
     var fetchResult:PHFetchResult<PHAsset>
     var title:String?
     
-    init(title:String?,fetchResult:PHFetchResult<PHAsset>){
+    init(title:String?, fetchResult: PHFetchResult<PHAsset>){
         self.title = title
         self.fetchResult = fetchResult
     }
@@ -32,32 +32,16 @@ public class PhotoPickerController: UIViewController {
     var sectionLocalizardTitles:[String] = []
     /// 最大选择数
     public var maxSelected = 9
-    
-    override public func awakeFromNib() {
-        super.awakeFromNib()
-        /// 相册的筛选方法
-        let smartOptions = PHFetchOptions()
-        let smartAlumbs = PHAssetCollection.fetchAssetCollections(with: PHAssetCollectionType.smartAlbum, subtype: PHAssetCollectionSubtype.albumRegular, options: smartOptions)
-        self.convertCollection(smartAlumbs as! PHFetchResult<AnyObject>)
-        
-        let topLevelUserCollections = PHCollectionList.fetchTopLevelUserCollections(with: nil)
-        self.convertCollection(topLevelUserCollections as! PHFetchResult<AnyObject>)
-        
-        self.items.sort { (item1, item2) -> Bool in
-            return item1.fetchResult.count > item2.fetchResult.count
-        }
-        PHPhotoLibrary.shared().register(self)
-    }
-    
+    public var shouldDeleteAfterExport: Bool = false
     
     init() {
         super.init(nibName: nil, bundle: nil)
         tableView.delegate = self
         tableView.dataSource = self
         self.view.addSubview(tableView)
-        tableView.register(PhotoLibarayCell().classForCoder, forCellReuseIdentifier: "PhotoLibarayCell")
+        tableView.register(PhotoLibarayCell.self, forCellReuseIdentifier: "PhotoLibarayCell")
         let smartOptions = PHFetchOptions()
-        let smartAlumbs = PHAssetCollection.fetchAssetCollections(with: PHAssetCollectionType.smartAlbum, subtype: PHAssetCollectionSubtype.albumRegular, options: smartOptions)
+        let smartAlumbs = PHAssetCollection.fetchAssetCollections(with: PHAssetCollectionType.smartAlbum, subtype: PHAssetCollectionSubtype.any, options: smartOptions)
         self.convertCollection(smartAlumbs as! PHFetchResult<AnyObject>)
         
         let topLevelUserCollections = PHCollectionList.fetchTopLevelUserCollections(with: nil)
@@ -81,7 +65,6 @@ public class PhotoPickerController: UIViewController {
         for i in 0 ..< collection.count {
             let resultsOptions = PHFetchOptions()
             resultsOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-            resultsOptions.predicate = NSPredicate(format: "mediaType = %d", PHAssetMediaType.image.rawValue)
             guard let c = collection[i] as? PHAssetCollection else { return
             }
             let assetsFetchResult = PHAsset.fetchAssets(in: c , options: resultsOptions)
@@ -95,7 +78,7 @@ public class PhotoPickerController: UIViewController {
     override public func viewDidLoad() {
         super.viewDidLoad()
         title = "照片库"
-        tableView.separatorInset = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        tableView.separatorInset = UIEdgeInsets.zero
         tableView.tableFooterView = UIView()
         tableView.rowHeight = 55
         let rightBarItem = UIBarButtonItem(title: "取消", style:UIBarButtonItemStyle.plain, target: self, action:#selector(PhotoPickerController.cancel) )
@@ -118,17 +101,21 @@ public class PhotoPickerController: UIViewController {
         } else {
             isFirstload = true
         }
-        if let photoGridVC = self.storyboard?.instantiateViewController(withIdentifier: "PhotoGridController") as? PhotoGridController {
-            photoGridVC.assetsFetchResults = self.items.first?.fetchResult
-            photoGridVC.completeHandler = completeHandler
-            photoGridVC.maxSelected = maxSelected
-            self.navigationController?.pushViewController(photoGridVC, animated: false)
+        guard let result = self.items.first?.fetchResult else {
+            return
         }
-        
-        
-        
+        showGridController(with: result, animated: false)
     }
     
+    func showGridController(with fetchResult: PHFetchResult<PHAsset>, animated: Bool = true) {
+        let photoGridVC = PhotoGridController()
+        photoGridVC.assetsFetchResults = fetchResult
+        photoGridVC.completeHandler = completeHandler
+        photoGridVC.maxSelected = maxSelected
+        photoGridVC.shouldDeleteAfterExport = shouldDeleteAfterExport
+        self.navigationController?.pushViewController(photoGridVC, animated: animated)
+        
+    }
     // MARK: - Navigation
 
     override public func prepare(for segue: UIStoryboardSegue, sender: Any?) {
@@ -141,6 +128,7 @@ public class PhotoPickerController: UIViewController {
             photoGridController.completeHandler = completeHandler
             photoGridController.title = cell.titleLabel.text
             photoGridController.maxSelected = maxSelected
+            photoGridController.shouldDeleteAfterExport = shouldDeleteAfterExport
             guard let indexPath = tableView.indexPath(for: cell) else {
                 return
             }
@@ -181,7 +169,6 @@ extension PhotoPickerController: PHPhotoLibraryChangeObserver {
 //MARK: - UITableViewDelegate && UItableVIewDataSource
 extension PhotoPickerController:UITableViewDelegate, UITableViewDataSource {
     public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        print(self.items)
         return self.items.count
     }
     public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -195,14 +182,7 @@ extension PhotoPickerController:UITableViewDelegate, UITableViewDataSource {
         return cell
     }
     public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        
-      
-        let photoGridVC = PhotoGridController.init()
-        photoGridVC.view.frame = self.view.frame
-        photoGridVC.assetsFetchResults = self.items[indexPath.row].fetchResult
-        photoGridVC.completeHandler = completeHandler
-        photoGridVC.maxSelected = maxSelected
-        self.navigationController?.pushViewController(photoGridVC, animated: true)
+        showGridController(with: self.items[indexPath.row].fetchResult)
         tableView.deselectRow(at: indexPath, animated: false)
     }
     
